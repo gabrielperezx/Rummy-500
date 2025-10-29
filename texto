@@ -1,0 +1,12 @@
+yo mismo bajé, no me permite insertarla. Si es para la seguidilla que yo bajé, simplemente me dice que 
+el índice para insertarla no es válido, y si intento insertarla en el trío, se cierra el juego y me muestra
+el siguiente mensaje de error de Player.py:
+line 610, in isTrioLike
+    values = [c.value for c in nonJokers]
+              ^^^^^^^
+AttributeError: 'str' object has no attribute 'value'
+
+el error por supuesto no es directamente en el archivo Player, sino que, supongo yo,
+que está leyendo las jugadas bajadas como una cadena de strings y no como listas
+de objetos de cartas, por lo que se muestra ese mensaje (sin embargo no estoy del
+todo seguro que sea exactamente eso). Podrías ayudarme a resolverlo?
