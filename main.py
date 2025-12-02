@@ -6,10 +6,17 @@ from network import NetworkManager
 
 def main():
     pygame.init()
+
+    # Configuración inicial con soporte para resizable
     SCREEN_WIDTH, SCREEN_HEIGHT = 1280, 720
     network_manager = NetworkManager()
+
+    # Crear ventana con límite mínimo
     ui_manager = UIManager(SCREEN_WIDTH, SCREEN_HEIGHT, network_manager)
 
+    # Establecer tamaño mínimo de ventana
+    MIN_WIDTH = 800
+    MIN_HEIGHT = 600
 
     running = True
     while running:
@@ -17,32 +24,33 @@ def main():
         if result == "launch_ui2":
             if network_manager.is_host:
                 jugadores = network_manager.connected_players
-                #print(f"Jugadore ... {jugadores}")
                 print(f"Inicializando juego con {len(jugadores)}")
                 # Para verificar que el network_manager siga ejecutándose
                 network_manager.running = True
 
                 import ui2
+
                 # Pasa el objeto network_manager que contiene el estado de la conexión
                 ui2.main(network_manager)
                 ui_manager.current_screen = "main"
-                
+
                 # Resetear estado para próxima partida
                 network_manager.game_started = False
                 continue
             else:
                 # Para verificar que el network_manager siga ejecutándose
                 network_manager.running = True
-                
+
                 import ui2
+
                 # Pasa el objeto network_manager que contiene el estado de la conexión
                 ui2.main(network_manager)
                 ui_manager.current_screen = "main"
-                
+
                 # Resetear estado para próxima partida
                 network_manager.game_started = False
                 continue
-                
+
         elif result is False:
             running = False
         else:
@@ -51,8 +59,6 @@ def main():
     pygame.quit()
     sys.exit()
 
+
 if __name__ == "__main__":
     main()
-{
-    
-}

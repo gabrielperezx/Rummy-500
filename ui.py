@@ -17,8 +17,8 @@ class Button:
         text_color,
         bg_color,
         hovering_color,
-        size=(200, 60),
-        scale_factor=1.1,
+        size=(0.15625, 0.08333),
+        scale_factor=1.05,
     ):
         self.image = image
         self.original_image = image
@@ -29,37 +29,40 @@ class Button:
         self.text_color = text_color
         self.hovering_color = hovering_color
         self.text_input = text_input
-        self.base_size = size
+        self.size_rel = size
         self.scale_factor = scale_factor
-        self.current_size = list(size)
+        self.current_size = [0, 0]
         self.is_hovering = False
+        self.border_width = 1
 
         if self.image is None:
-            self.image = self.create_button_surface(self.base_size, self.bg_color)
-            self.original_image = self.image
+            self.image = None
+            self.original_image = None
 
         self.text = self.font.render(self.text_input, False, self.text_color)
 
-        if self.image is not None:
-            self.image = pygame.transform.scale(self.original_image, self.current_size)
-            self.rect = self.image.get_rect(center=(self.x_pos, self.y_pos))
-        else:
-            self.rect = pygame.Rect(0, 0, *self.current_size)
-            self.rect.center = (self.x_pos, self.y_pos)
-
+        self.rect = pygame.Rect(0, 0, 0, 0)
         self.text_rect = self.text.get_rect(center=(self.x_pos, self.y_pos))
 
     def create_button_surface(self, size, color):
         surface = pygame.Surface(size, pygame.SRCALPHA)
         rect = pygame.Rect(0, 0, size[0], size[1])
-        pygame.draw.rect(surface, color, rect, border_radius=12)
-        pygame.draw.rect(surface, self.hovering_color, rect, 2, border_radius=12)
+        border_radius = max(6, min(12, int(min(size[0], size[1]) * 0.1)))
+        pygame.draw.rect(surface, color, rect, border_radius=border_radius)
         return surface
 
-    def update(self, screen):
+    def update(self, screen, screen_width, screen_height):
+        base_size = [
+            int(self.size_rel[0] * screen_width),
+            int(self.size_rel[1] * screen_height),
+        ]
+
+        base_size[0] = max(base_size[0], 100)
+        base_size[1] = max(base_size[1], 40)
+
         target_size = [
-            int(self.base_size[0] * (self.scale_factor if self.is_hovering else 1)),
-            int(self.base_size[1] * (self.scale_factor if self.is_hovering else 1)),
+            int(base_size[0] * (self.scale_factor if self.is_hovering else 1)),
+            int(base_size[1] * (self.scale_factor if self.is_hovering else 1)),
         ]
 
         for i in range(2):
@@ -67,6 +70,17 @@ class Button:
                 self.current_size[i] += (target_size[i] - self.current_size[i]) * 0.2
             else:
                 self.current_size[i] = target_size[i]
+
+        if self.image is None:
+            self.image = self.create_button_surface(self.current_size, self.bg_color)
+            self.original_image = self.image
+        else:
+            scaled_image = pygame.transform.scale(
+                self.original_image, [int(x) for x in self.current_size]
+            )
+            scaled_rect = scaled_image.get_rect(center=(self.x_pos, self.y_pos))
+            screen.blit(scaled_image, scaled_rect)
+            self.rect = scaled_rect
 
         if self.image is not None:
             scaled_image = pygame.transform.scale(
@@ -78,6 +92,16 @@ class Button:
         else:
             self.rect.size = (int(self.current_size[0]), int(self.current_size[1]))
             self.rect.center = (self.x_pos, self.y_pos)
+
+        if self.current_size[0] < self.text.get_width() * 1.2:
+            font_size = max(16, int(self.current_size[1] * 0.5))
+            try:
+                scaled_font = pygame.font.Font(
+                    os.path.join("assets", "Play-Regular.ttf"), font_size
+                )
+            except:
+                scaled_font = pygame.font.SysFont("Arial", font_size)
+            self.text = scaled_font.render(self.text_input, False, self.text_color)
 
         self.text_rect = self.text.get_rect(center=self.rect.center)
         screen.blit(self.text, self.text_rect)
@@ -105,7 +129,7 @@ class Button:
 
 
 class InputBox:
-    def __init__(self, x, y, w, h, font, text=""):
+    def __init__(self, x, y, w, h, font, text="", max_width_rel=0.3):
         self.rect = pygame.Rect(x, y, w, h)
         self.color_inactive = pygame.Color("#e35d59")
         self.color_active = pygame.Color("#F9AA33")
@@ -114,8 +138,10 @@ class InputBox:
         self.font = font
         self.txt_surface = font.render(text, True, pygame.Color("#000000"))
         self.active = False
+        self.max_width_rel = max_width_rel
+        self.original_width = w
 
-    def handle_event(self, event):
+    def handle_event(self, event, screen_width):
         if event.type == pygame.MOUSEBUTTONDOWN:
             if self.rect.collidepoint(event.pos):
                 self.active = not self.active
@@ -134,15 +160,42 @@ class InputBox:
                 self.txt_surface = self.font.render(
                     self.text, True, pygame.Color("#000000")
                 )
+        return None
 
-    def update(self):
-        width = max(200, self.txt_surface.get_width() + 10)
+    def update(self, screen_width, screen_height):
+        width = max(self.original_width, self.txt_surface.get_width() + 10)
+        max_width = int(screen_width * self.max_width_rel)
+        if width > max_width:
+            width = max_width
         self.rect.w = width
+        self.rect.h = max(int(screen_height * 0.05556), 40)
 
     def draw(self, screen):
-        pygame.draw.rect(screen, pygame.Color("#FFFFFF"), self.rect, border_radius=8)
-        pygame.draw.rect(screen, self.color, self.rect, 2, border_radius=8)
-        screen.blit(self.txt_surface, (self.rect.x + 5, self.rect.y + 5))
+        border_radius = max(4, min(8, int(min(self.rect.w, self.rect.h) * 0.2)))
+        pygame.draw.rect(
+            screen, pygame.Color("#FFFFFF"), self.rect, border_radius=border_radius
+        )
+        pygame.draw.rect(screen, self.color, self.rect, 2, border_radius=border_radius)
+
+        text_to_draw = self.text
+        text_surface = self.txt_surface
+        if text_surface.get_width() > self.rect.w - 10:
+            for i in range(len(self.text), 0, -1):
+                test_surface = self.font.render(
+                    self.text[:i] + "...", True, pygame.Color("#000000")
+                )
+                if test_surface.get_width() <= self.rect.w - 10:
+                    text_to_draw = self.text[:i] + "..."
+                    text_surface = test_surface
+                    break
+
+        screen.blit(
+            text_surface,
+            (
+                self.rect.x + 5,
+                self.rect.y + (self.rect.h - text_surface.get_height()) // 2,
+            ),
+        )
 
 
 class UIManager:
@@ -186,20 +239,13 @@ class UIManager:
         self.fondo_img_original = pygame.image.load(
             os.path.join(assets_path, "fondo.png")
         ).convert()
-        self.cuadro_img = pygame.image.load(
+        self.cuadro_img_original = pygame.image.load(
             os.path.join(assets_path, "cuadro.png")
         ).convert_alpha()
 
-        self.animacion_fondo_img = pygame.image.load(
+        self.animacion_fondo_img_original = pygame.image.load(
             os.path.join(assets_path, "animacion_fondo.png")
         ).convert_alpha()
-        self.animacion_fondo_img = pygame.transform.scale(
-            self.animacion_fondo_img, (1000, 800)
-        )
-        self.pos_izquierda = (40, 120)
-        self.pos_derecha = (1230, 120)
-        self.angulo_izquierda = 0
-        self.angulo_derecha = 0
 
         try:
             self.pixel_font = pygame.font.Font(
@@ -219,27 +265,71 @@ class UIManager:
         )
 
     def get_font(self, size):
+        base_size = int(size * min(self.SCREEN_WIDTH / 1280, self.SCREEN_HEIGHT / 720))
+        scaled_size = max(12, base_size)
         try:
-            return pygame.font.Font(os.path.join("assets", "Play-Regular.ttf"), size)
+            return pygame.font.Font(
+                os.path.join("assets", "Play-Regular.ttf"), scaled_size
+            )
         except:
             print(
                 "Advertencia: No se pudo cargar la fuente personalizada. Usando fuente por defecto."
             )
-            return pygame.font.SysFont("Arial", size)
+            return pygame.font.SysFont("Arial", scaled_size)
 
     def init_components(self):
+        min_width = 800
+        min_height = 600
+
+        if self.SCREEN_WIDTH < min_width or self.SCREEN_HEIGHT < min_height:
+            scale_factor = min(
+                self.SCREEN_WIDTH / min_width, self.SCREEN_HEIGHT / min_height
+            )
+            effective_width = max(self.SCREEN_WIDTH, min_width * scale_factor)
+            effective_height = max(self.SCREEN_HEIGHT, min_height * scale_factor)
+        else:
+            effective_width = self.SCREEN_WIDTH
+            effective_height = self.SCREEN_HEIGHT
+
         self.titulo_img = pygame.transform.scale(
             self.titulo_img_original,
-            (int(self.SCREEN_WIDTH * 0.5), int(self.SCREEN_HEIGHT * 0.35)),
+            (int(effective_width * 0.5), int(effective_height * 0.35)),
         )
         self.fondo_img = pygame.transform.scale(
             self.fondo_img_original, (self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
         )
 
+        cuadro_width = int(effective_width * 0.75)
+        cuadro_height = int(effective_height * 0.65)
+        self.cuadro_img = pygame.transform.scale(
+            self.cuadro_img_original,
+            (cuadro_width, cuadro_height),
+        )
+
+        self.animacion_fondo_img = pygame.transform.scale(
+            self.animacion_fondo_img_original,
+            (
+                int(effective_width * 0.78125),
+                int(effective_height * 1.11111),
+            ),
+        )
+
+        self.pos_izquierda = (
+            int(effective_width * 0.03125),
+            int(effective_height * 0.16667),
+        )
+        self.pos_derecha = (
+            int(effective_width * 0.96094),
+            int(effective_height * 0.16667),
+        )
+        self.angulo_izquierda = 0
+        self.angulo_derecha = 0
+
         button_base_color = "#e35d59"
         text_color = "#FFFFFF"
         button_hover_color = "#F9AA33"
 
+        # Aumentar tamaño de fuente de los botones principales
         self.JUGAR_BUTTON = Button(
             image=None,
             pos=(
@@ -247,156 +337,188 @@ class UIManager:
                 int(self.SCREEN_HEIGHT * 0.55),
             ),
             text_input="JUGAR",
-            font=self.get_font(35),
+            font=self.get_font(50),  # Aumentado de 45 a 50
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(300, 65),
+            size=(0.234375, 0.090278),
         )
 
         self.REGLAS_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 - 180, int(self.SCREEN_HEIGHT * 0.75)),
+            pos=(
+                self.SCREEN_WIDTH // 2 - int(self.SCREEN_WIDTH * 0.140625),
+                int(self.SCREEN_HEIGHT * 0.75),
+            ),
             text_input="REGLAS",
-            font=self.get_font(35),
+            font=self.get_font(50),  # Aumentado de 45 a 50
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(220, 65),
+            size=(0.171875, 0.090278),
         )
 
         self.SALIR_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 + 180, int(self.SCREEN_HEIGHT * 0.75)),
+            pos=(
+                self.SCREEN_WIDTH // 2 + int(self.SCREEN_WIDTH * 0.140625),
+                int(self.SCREEN_HEIGHT * 0.75),
+            ),
             text_input="SALIR",
-            font=self.get_font(35),
+            font=self.get_font(50),  # Aumentado de 45 a 50
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(220, 65),
+            size=(0.171875, 0.090278),
         )
 
+        # Aumentar tamaño de fuente para botones del menú de juego
         self.UNIRSE_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 - 150, 420),
+            pos=(
+                self.SCREEN_WIDTH // 2 - int(self.SCREEN_WIDTH * 0.1171875),
+                int(self.SCREEN_HEIGHT * 0.58333),
+            ),
             text_input="UNIRSE",
-            font=self.get_font(30),
+            font=self.get_font(45),  # Aumentado de 40 a 45
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(180, 60),
+            size=(0.140625, 0.08333),
         )
 
         self.CREAR_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 + 150, 420),
+            pos=(
+                self.SCREEN_WIDTH // 2 + int(self.SCREEN_WIDTH * 0.1171875),
+                int(self.SCREEN_HEIGHT * 0.58333),
+            ),
             text_input="CREAR",
-            font=self.get_font(30),
+            font=self.get_font(45),  # Aumentado de 40 a 45
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(180, 60),
+            size=(0.140625, 0.08333),
         )
 
         self.PLAY_BACK = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2, self.SCREEN_HEIGHT * 0.75),
+            pos=(self.SCREEN_WIDTH // 2, int(self.SCREEN_HEIGHT * 0.75)),
             text_input="VOLVER",
-            font=self.get_font(35),
+            font=self.get_font(50),  # Aumentado de 45 a 50
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(220, 65),
+            size=(0.171875, 0.090278),
         )
 
-        small_font = self.get_font(25)
+        # Aumentar tamaño de fuente para botones pequeños - AUMENTADO MÁS
+        small_font = self.get_font(35)  # Aumentado de 30 a 35
 
         self.JOIN_IP_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2, 490),
+            pos=(self.SCREEN_WIDTH // 2, int(self.SCREEN_HEIGHT * 0.68056)),
             text_input="Conectar",
-            font=small_font,
+            font=small_font,  # Usa small_font que ahora es 40
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(160, 45),
+            size=(0.125, 0.0625),
         )
 
         self.JOIN_BACK_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 + 150, self.SCREEN_HEIGHT * 0.85),
+            pos=(
+                self.SCREEN_WIDTH // 2 - int(self.SCREEN_WIDTH * 0.15625),
+                int(self.SCREEN_HEIGHT * 0.85),
+            ),
             text_input="Volver",
-            font=small_font,
+            font=small_font,  # Usa small_font que ahora es 40
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(160, 45),
+            size=(0.125, 0.0625),
         )
 
         self.JOIN_REFREHS_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 - 150, self.SCREEN_HEIGHT * 0.85),
+            pos=(
+                self.SCREEN_WIDTH // 2,
+                int(self.SCREEN_HEIGHT * 0.85),
+            ),
             text_input="Actualizar",
-            font=small_font,
+            font=small_font,  # Usa small_font que ahora es 40
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(160, 45),
+            size=(0.125, 0.0625),
         )
 
         self.CREATE_GAME_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 + 150, self.SCREEN_HEIGHT * 0.85),
+            pos=(
+                self.SCREEN_WIDTH // 2 + int(self.SCREEN_WIDTH * 0.1171875),
+                int(self.SCREEN_HEIGHT * 0.85),
+            ),
             text_input="Crear Partida",
-            font=small_font,
+            font=small_font,  # Usa small_font que ahora es 40
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(160, 45),
+            size=(0.125, 0.0625),
         )
 
         self.CREATE_BACK_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 - 150, self.SCREEN_HEIGHT * 0.85),
+            pos=(
+                self.SCREEN_WIDTH // 2 - int(self.SCREEN_WIDTH * 0.1171875),
+                int(self.SCREEN_HEIGHT * 0.85),
+            ),
             text_input="Volver",
-            font=small_font,
+            font=small_font,  # Usa small_font que ahora es 40
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(160, 45),
+            size=(0.125, 0.0625),
         )
 
         self.PLAY_GAME_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 - 150, self.SCREEN_HEIGHT * 0.85),
+            pos=(
+                self.SCREEN_WIDTH // 2 - int(self.SCREEN_WIDTH * 0.1171875),
+                int(self.SCREEN_HEIGHT * 0.85),
+            ),
             text_input="INICIAR PARTIDA",
-            font=self.get_font(25),
+            font=self.get_font(40),  # Aumentado de 35 a 40
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(250, 65),
+            size=(0.1953125, 0.090278),
         )
 
         self.LOBBY_BACK_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2 + 150, self.SCREEN_HEIGHT * 0.85),
+            pos=(
+                self.SCREEN_WIDTH // 2 + int(self.SCREEN_WIDTH * 0.1171875),
+                int(self.SCREEN_HEIGHT * 0.85),
+            ),
             text_input="VOLVER",
-            font=self.get_font(35),
+            font=self.get_font(50),  # Aumentado de 45 a 50
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(220, 65),
+            size=(0.171875, 0.090278),
         )
 
         self.SEND_MS_BUTTON = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2, 500),
+            pos=(self.SCREEN_WIDTH // 2, int(self.SCREEN_HEIGHT * 0.69444)),
             text_input="Enviar Mensaje",
-            font=small_font,
+            font=small_font,  # Usa small_font que ahora es 40
             text_color=text_color,
             bg_color=button_base_color,
             hovering_color=button_hover_color,
-            size=(300, 45),
+            size=(0.234375, 0.0625),
         )
 
         self.credits_x_pos = self.SCREEN_WIDTH
@@ -405,26 +527,65 @@ class UIManager:
         self.init_input_boxes()
 
     def init_input_boxes(self):
-        small_font = self.get_font(28)
-        smaller_font = self.get_font(20)
+        # Aumentar también las fuentes de los input boxes para mantener proporción
+        small_font = self.get_font(36)  # Aumentado de 32 a 36
+        smaller_font = self.get_font(28)  # Aumentado de 24 a 28
+
+        input_width_rel = min(0.25, 300 / self.SCREEN_WIDTH)
+        input_height_rel = 0.05556
 
         self.host_input_box = InputBox(
-            self.SCREEN_WIDTH // 2 + 100, 200, 300, 40, small_font
+            int(self.SCREEN_WIDTH // 2 + self.SCREEN_WIDTH * 0.078125),
+            int(self.SCREEN_HEIGHT * 0.27778),
+            int(self.SCREEN_WIDTH * input_width_rel),
+            int(self.SCREEN_HEIGHT * input_height_rel),
+            small_font,
+            max_width_rel=0.3,
         )
+
         self.join_password_input_box = InputBox(
-            self.SCREEN_WIDTH // 2 - 30, 390, 300, 40, small_font
+            int(self.SCREEN_WIDTH // 2 - self.SCREEN_WIDTH * 0.0234375),
+            int(self.SCREEN_HEIGHT * 0.54167),
+            int(self.SCREEN_WIDTH * input_width_rel),
+            int(self.SCREEN_HEIGHT * input_height_rel),
+            small_font,
+            max_width_rel=0.3,
         )
+
         self.join_player_input_box = InputBox(
-            self.SCREEN_WIDTH // 2 - 30, 340, 300, 40, small_font
+            int(self.SCREEN_WIDTH // 2 - self.SCREEN_WIDTH * 0.0234375),
+            int(self.SCREEN_HEIGHT * 0.47222),
+            int(self.SCREEN_WIDTH * input_width_rel),
+            int(self.SCREEN_HEIGHT * input_height_rel),
+            small_font,
+            max_width_rel=0.3,
         )
+
         self.name_input_box = InputBox(
-            self.SCREEN_WIDTH // 2 + 100, 240, 300, 40, small_font
+            int(self.SCREEN_WIDTH // 2 + self.SCREEN_WIDTH * 0.078125),
+            int(self.SCREEN_HEIGHT * 0.33333),
+            int(self.SCREEN_WIDTH * input_width_rel),
+            int(self.SCREEN_HEIGHT * input_height_rel),
+            small_font,
+            max_width_rel=0.3,
         )
+
         self.password_input_box = InputBox(
-            self.SCREEN_WIDTH // 2 + 100, 280, 300, 40, small_font
+            int(self.SCREEN_WIDTH // 2 + self.SCREEN_WIDTH * 0.078125),
+            int(self.SCREEN_HEIGHT * 0.38889),
+            int(self.SCREEN_WIDTH * input_width_rel),
+            int(self.SCREEN_HEIGHT * input_height_rel),
+            small_font,
+            max_width_rel=0.3,
         )
+
         self.max_players_input_box = InputBox(
-            self.SCREEN_WIDTH // 2 + 100, 320, 300, 40, small_font
+            int(self.SCREEN_WIDTH // 2 + self.SCREEN_WIDTH * 0.078125),
+            int(self.SCREEN_HEIGHT * 0.44444),
+            int(self.SCREEN_WIDTH * input_width_rel),
+            int(self.SCREEN_HEIGHT * input_height_rel),
+            small_font,
+            max_width_rel=0.3,
         )
 
         text_color = "#FFFFFF"
@@ -434,7 +595,12 @@ class UIManager:
         self.host_text = smaller_font.render("Host:", True, text_color)
 
         self.message_input_box = InputBox(
-            self.SCREEN_WIDTH // 2 + 100, 320, 300, 40, small_font
+            int(self.SCREEN_WIDTH // 2 + self.SCREEN_WIDTH * 0.078125),
+            int(self.SCREEN_HEIGHT * 0.44444),
+            int(self.SCREEN_WIDTH * input_width_rel),
+            int(self.SCREEN_HEIGHT * input_height_rel),
+            small_font,
+            max_width_rel=0.3,
         )
 
         self.messages_text = smaller_font.render("CHAT", True, text_color)
@@ -481,7 +647,7 @@ class UIManager:
 
         for button in [self.JUGAR_BUTTON, self.REGLAS_BUTTON, self.SALIR_BUTTON]:
             button.check_hover(MENU_MOUSE_POS)
-            button.update(self.SCREEN)
+            button.update(self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
 
         return MENU_MOUSE_POS
 
@@ -490,28 +656,40 @@ class UIManager:
 
         for button in [self.UNIRSE_BUTTON, self.CREAR_BUTTON, self.PLAY_BACK]:
             button.check_hover(MENU_MOUSE_POS)
-            button.update(self.SCREEN)
+            button.update(self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
 
         return MENU_MOUSE_POS
 
     def draw_join_menu(self):
         self.servers = self.network_manager.servers
         MENU_MOUSE_POS = pygame.mouse.get_pos()
-        smaller_font = self.get_font(20)
+        smaller_font = self.get_font(28)  # Actualizado de 24 a 28
 
-        box_width = 800
-        box_height = 450
-        box_x = self.SCREEN_WIDTH // 2 - box_width // 2
-        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2
+        margin = max(30, int(self.SCREEN_WIDTH * 0.03))
+        box_width = self.SCREEN_WIDTH - 2 * margin
+        box_height = int(self.SCREEN_HEIGHT * 0.65)
+        box_x = margin
+        box_y = (self.SCREEN_HEIGHT - box_height) // 2
+
+        box_width = max(box_width, 600)
+        box_height = max(box_height, 400)
 
         join_bg_img = pygame.transform.scale(self.cuadro_img, (box_width, box_height))
         self.SCREEN.blit(join_bg_img, (box_x, box_y))
 
-        input_x = box_x + 400
-        input_req_x = box_x + 100
+        input_x = box_x + int(box_width * 0.5)
+        input_req_x = box_x + int(box_width * 0.1)
 
         rectNameServer = pygame.draw.rect(
-            self.SCREEN, (255, 255, 254), (input_x - 100, box_y + 80, 400, 48), 2
+            self.SCREEN,
+            (255, 255, 254),
+            (
+                input_x - int(box_width * 0.125),
+                box_y + int(box_height * 0.17778),
+                int(box_width * 0.5),
+                int(box_height * 0.10667),
+            ),
+            2,
         )
         self.is_hovered = rectNameServer.collidepoint(MENU_MOUSE_POS)
 
@@ -529,17 +707,29 @@ class UIManager:
                 True,
                 (0, 0, 0),
             )
-            self.SCREEN.blit(server_text, (input_x - 80, box_y + 95))
+            self.SCREEN.blit(
+                server_text,
+                (input_x - int(box_width * 0.1), box_y + int(box_height * 0.21111)),
+            )
         else:
             noServers = smaller_font.render("No hay servidores :( ", True, (0, 0, 0))
-            self.SCREEN.blit(noServers, (input_x - 80, box_y + 95))
+            self.SCREEN.blit(
+                noServers,
+                (input_x - int(box_width * 0.1), box_y + int(box_height * 0.21111)),
+            )
 
         if self.response == "No ha seleccionado un servidor":
             if pygame.time.get_ticks() < self.no_server_until:
                 noSelectServer = smaller_font.render(
                     "Seleccione un servidor", True, (255, 255, 255)
                 )
-                self.SCREEN.blit(noSelectServer, (input_x + 120, box_y + 95))
+                self.SCREEN.blit(
+                    noSelectServer,
+                    (
+                        input_x + int(box_width * 0.15),
+                        box_y + int(box_height * 0.21111),
+                    ),
+                )
             else:
                 self.response = None
         elif self.response == "wrongPassword":
@@ -547,7 +737,13 @@ class UIManager:
                 wrongPassword = smaller_font.render(
                     "Contraseña Incorrecta", True, (255, 255, 255)
                 )
-                self.SCREEN.blit(wrongPassword, (input_x + 120, box_y + 95))
+                self.SCREEN.blit(
+                    wrongPassword,
+                    (
+                        input_x + int(box_width * 0.15),
+                        box_y + int(box_height * 0.21111),
+                    ),
+                )
             else:
                 self.response = None
         elif self.response == "fullserver":
@@ -555,93 +751,153 @@ class UIManager:
                 fullserver = smaller_font.render(
                     "Servidor Lleno", True, (255, 255, 255)
                 )
-                self.SCREEN.blit(fullserver, (input_x + 120, box_y + 95))
+                self.SCREEN.blit(
+                    fullserver,
+                    (
+                        input_x + int(box_width * 0.15),
+                        box_y + int(box_height * 0.21111),
+                    ),
+                )
             else:
                 self.response = None
 
         text_color = "#FFFFFF"
         ip_label = smaller_font.render("Nombre Servidor:", True, text_color)
-        self.SCREEN.blit(ip_label, (input_req_x, box_y + 95))
+        self.SCREEN.blit(ip_label, (input_req_x, box_y + int(box_height * 0.21111)))
 
         player_label = smaller_font.render("Nombre Jugador:", True, text_color)
-        self.SCREEN.blit(player_label, (input_req_x, box_y + 150))
+        self.SCREEN.blit(player_label, (input_req_x, box_y + int(box_height * 0.33333)))
+
+        self.join_player_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+        self.join_player_input_box.rect.topleft = (
+            input_x - int(box_width * 0.125),
+            box_y + int(box_height * 0.32222),
+        )
         self.join_player_input_box.draw(self.SCREEN)
-        self.join_player_input_box.rect.topleft = (input_x - 100, box_y + 145)
 
         pw_label = smaller_font.render("Contraseña:", True, text_color)
-        self.SCREEN.blit(pw_label, (input_req_x, box_y + 205))
+        self.SCREEN.blit(pw_label, (input_req_x, box_y + int(box_height * 0.45556)))
+
+        self.join_password_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+        self.join_password_input_box.rect.topleft = (
+            input_x - int(box_width * 0.125),
+            box_y + int(box_height * 0.44444),
+        )
         self.join_password_input_box.draw(self.SCREEN)
-        self.join_password_input_box.rect.topleft = (input_x - 100, box_y + 200)
 
-        self.JOIN_IP_BUTTON.x_pos = self.SCREEN_WIDTH // 2 + 200
-        self.JOIN_IP_BUTTON.y_pos = box_y + 220
-        self.JOIN_IP_BUTTON.check_hover(MENU_MOUSE_POS)
-        self.JOIN_IP_BUTTON.update(self.SCREEN)
+        # Reorganizar botones: Volver, Actualizar, Conectar
+        button_y = box_y + int(box_height * 0.71111)
 
-        self.JOIN_REFREHS_BUTTON.x_pos = self.SCREEN_WIDTH // 2 + 200
-        self.JOIN_REFREHS_BUTTON.y_pos = box_y + 320
-        self.JOIN_REFREHS_BUTTON.check_hover(MENU_MOUSE_POS)
-        self.JOIN_REFREHS_BUTTON.update(self.SCREEN)
+        # Calcular posiciones equitativas
+        button_spacing = box_width / 4
 
-        self.JOIN_BACK_BUTTON.x_pos = self.SCREEN_WIDTH // 2 - 200
-        self.JOIN_BACK_BUTTON.y_pos = box_y + 320
+        self.JOIN_BACK_BUTTON.x_pos = box_x + button_spacing
+        self.JOIN_BACK_BUTTON.y_pos = button_y
         self.JOIN_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
-        self.JOIN_BACK_BUTTON.update(self.SCREEN)
+        self.JOIN_BACK_BUTTON.update(self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+
+        self.JOIN_REFREHS_BUTTON.x_pos = box_x + 2 * button_spacing
+        self.JOIN_REFREHS_BUTTON.y_pos = button_y
+        self.JOIN_REFREHS_BUTTON.check_hover(MENU_MOUSE_POS)
+        self.JOIN_REFREHS_BUTTON.update(
+            self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT
+        )
+
+        self.JOIN_IP_BUTTON.x_pos = box_x + 3 * button_spacing
+        self.JOIN_IP_BUTTON.y_pos = button_y
+        self.JOIN_IP_BUTTON.check_hover(MENU_MOUSE_POS)
+        self.JOIN_IP_BUTTON.update(self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
 
         return MENU_MOUSE_POS
 
     def draw_create_menu(self):
         MENU_MOUSE_POS = pygame.mouse.get_pos()
-        smaller_font = self.get_font(20)
+        smaller_font = self.get_font(28)  # Actualizado de 24 a 28
 
-        box_width = 600
-        box_height = 450
-        box_x = self.SCREEN_WIDTH // 2 - box_width // 2
-        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2
+        margin = max(30, int(self.SCREEN_WIDTH * 0.03))
+        box_width = self.SCREEN_WIDTH - 2 * margin
+        box_height = int(self.SCREEN_HEIGHT * 0.65)
+        box_x = margin
+        box_y = (self.SCREEN_HEIGHT - box_height) // 2
+
+        box_width = max(box_width, 600)
+        box_height = max(box_height, 450)
 
         create_bg_img = pygame.transform.scale(self.cuadro_img, (box_width, box_height))
         self.SCREEN.blit(create_bg_img, (box_x, box_y))
 
-        input_x = box_x + 300
-        input_req_x = box_x + 80
+        input_x = box_x + int(box_width * 0.55)
+        input_req_x = box_x + int(box_width * 0.1)
 
+        self.host_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+        self.host_input_box.rect.topleft = (input_x, box_y + int(box_height * 0.17778))
         self.host_input_box.draw(self.SCREEN)
-        self.host_input_box.rect.topleft = (input_x, box_y + 80)
 
+        self.name_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+        self.name_input_box.rect.topleft = (input_x, box_y + int(box_height * 0.31111))
         self.name_input_box.draw(self.SCREEN)
-        self.name_input_box.rect.topleft = (input_x, box_y + 140)
 
+        self.password_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+        self.password_input_box.rect.topleft = (
+            input_x,
+            box_y + int(box_height * 0.44444),
+        )
         self.password_input_box.draw(self.SCREEN)
-        self.password_input_box.rect.topleft = (input_x, box_y + 200)
 
+        self.max_players_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+        self.max_players_input_box.rect.topleft = (
+            input_x,
+            box_y + int(box_height * 0.57778),
+        )
         self.max_players_input_box.draw(self.SCREEN)
-        self.max_players_input_box.rect.topleft = (input_x, box_y + 260)
 
-        self.CREATE_GAME_BUTTON.x_pos = self.SCREEN_WIDTH // 2 + 140
-        self.CREATE_GAME_BUTTON.y_pos = box_y + 340
+        self.CREATE_GAME_BUTTON.x_pos = self.SCREEN_WIDTH // 2 + int(
+            self.SCREEN_WIDTH * 0.109375
+        )
+        self.CREATE_GAME_BUTTON.y_pos = box_y + int(box_height * 0.75556)
         self.CREATE_GAME_BUTTON.check_hover(MENU_MOUSE_POS)
-        self.CREATE_GAME_BUTTON.update(self.SCREEN)
+        self.CREATE_GAME_BUTTON.update(
+            self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT
+        )
 
-        self.CREATE_BACK_BUTTON.x_pos = self.SCREEN_WIDTH // 2 - 140
-        self.CREATE_BACK_BUTTON.y_pos = box_y + 340
+        self.CREATE_BACK_BUTTON.x_pos = self.SCREEN_WIDTH // 2 - int(
+            self.SCREEN_WIDTH * 0.109375
+        )
+        self.CREATE_BACK_BUTTON.y_pos = box_y + int(box_height * 0.75556)
         self.CREATE_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
-        self.CREATE_BACK_BUTTON.update(self.SCREEN)
+        self.CREATE_BACK_BUTTON.update(
+            self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT
+        )
 
-        self.SCREEN.blit(self.host_text, (input_req_x, box_y + 90))
-        self.SCREEN.blit(self.name_text, (input_req_x, box_y + 150))
-        self.SCREEN.blit(self.password_text, (input_req_x, box_y + 210))
-        self.SCREEN.blit(self.max_players_text, (input_req_x, box_y + 270))
+        self.SCREEN.blit(self.host_text, (input_req_x, box_y + int(box_height * 0.2)))
+        self.SCREEN.blit(
+            self.name_text, (input_req_x, box_y + int(box_height * 0.33333))
+        )
+        self.SCREEN.blit(
+            self.password_text, (input_req_x, box_y + int(box_height * 0.46667))
+        )
+        self.SCREEN.blit(
+            self.max_players_text, (input_req_x, box_y + int(box_height * 0.6))
+        )
 
         return MENU_MOUSE_POS
 
     def draw_lobby(self):
         MENU_MOUSE_POS = pygame.mouse.get_pos()
-        smaller_font = self.get_font(20)
+        smaller_font = self.get_font(28)  # Actualizado de 24 a 28
 
-        box_width = 800
-        box_height = 550
-        box_x = self.SCREEN_WIDTH // 2 - box_width // 2
-        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 - 5
+        margin = max(30, int(self.SCREEN_WIDTH * 0.03))
+        box_width = self.SCREEN_WIDTH - 2 * margin
+        box_height = int(self.SCREEN_HEIGHT * 0.76389)
+        box_x = margin
+        box_y = (
+            self.SCREEN_HEIGHT // 2
+            - box_height // 2
+            - int(self.SCREEN_HEIGHT * 0.00694)
+        )
+
+        box_width = max(box_width, 700)
+        box_height = max(box_height, 550)
 
         join_bg_img = pygame.transform.scale(self.cuadro_img, (box_width, box_height))
         self.SCREEN.blit(join_bg_img, (box_x, box_y))
@@ -659,64 +915,93 @@ class UIManager:
                 "#ffffff",
             )
 
-        text_rect = text_surface.get_rect(center=(self.SCREEN_WIDTH // 2, box_y + 180))
+        text_rect = text_surface.get_rect(
+            center=(self.SCREEN_WIDTH // 2, box_y + int(box_height * 0.32727))
+        )
         self.SCREEN.blit(text_surface, text_rect)
 
-        input_x = box_x + 250
-        input_req_x = box_x + 20
+        input_x = box_x + int(box_width * 0.3125)
+        input_req_x = box_x + int(box_width * 0.025)
 
         pygame.draw.rect(
             self.SCREEN,
             (255, 255, 255),
-            (box_x + 230, box_y + 200, 430, 140),
+            (
+                box_x + int(box_width * 0.2875),
+                box_y + int(box_height * 0.36364),
+                int(box_width * 0.5375),
+                int(box_height * 0.25455),
+            ),
             2,
             border_radius=8,
         )
 
-        y_offset = box_y + 210
+        y_offset = box_y + int(box_height * 0.38182)
         with self.chatLock:
             recentMsg = self.network_manager.messagesServer[-5:]
 
         for msg in recentMsg:
             msg_surface = smaller_font.render(msg, True, (0, 0, 0))
-            if msg_surface.get_width() > box_x + 200 - 10:
+            if msg_surface.get_width() > box_x + int(box_width * 0.25) - 10:
                 msg = msg[:17] + "..."
                 msg_surface = smaller_font.render(msg, True, (0, 0, 0))
-            self.SCREEN.blit(msg_surface, (input_x - 10, y_offset))
-            y_offset += 25
+            self.SCREEN.blit(msg_surface, (input_x - int(box_width * 0.0125), y_offset))
+            y_offset += int(box_height * 0.04545)
 
+        self.message_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+        self.message_input_box.rect.topleft = (
+            input_x + int(box_width * 0.0625),
+            box_y + int(box_height * 0.61818),
+        )
         self.message_input_box.draw(self.SCREEN)
-        self.message_input_box.rect.topleft = (input_x + 50, box_y + 340)
 
         self.SEND_MS_BUTTON.x_pos = self.SCREEN_WIDTH // 2
-        self.SEND_MS_BUTTON.y_pos = box_y + 400
+        self.SEND_MS_BUTTON.y_pos = box_y + int(box_height * 0.72727)
         self.SEND_MS_BUTTON.check_hover(MENU_MOUSE_POS)
-        self.SEND_MS_BUTTON.update(self.SCREEN)
+        self.SEND_MS_BUTTON.update(self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
 
         if self.network_manager.is_host:
             canStart = self.network_manager.canStartGame()
-            self.PLAY_GAME_BUTTON.x_pos = self.SCREEN_WIDTH // 2 - 150
+            self.PLAY_GAME_BUTTON.x_pos = self.SCREEN_WIDTH // 2 - int(
+                self.SCREEN_WIDTH * 0.1171875
+            )
             self.PLAY_GAME_BUTTON.y_pos = self.SCREEN_HEIGHT * 0.85
             self.PLAY_GAME_BUTTON.check_hover(MENU_MOUSE_POS)
             if canStart:
                 self.PLAY_GAME_BUTTON.check_hover(MENU_MOUSE_POS)
-                self.PLAY_GAME_BUTTON.update(self.SCREEN)
+                self.PLAY_GAME_BUTTON.update(
+                    self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT
+                )
         elif self.playGamePlayer:
-            self.PLAY_GAME_BUTTON.x_pos = self.SCREEN_WIDTH // 2 - 150
+            self.PLAY_GAME_BUTTON.x_pos = self.SCREEN_WIDTH // 2 - int(
+                self.SCREEN_WIDTH * 0.1171875
+            )
             self.PLAY_GAME_BUTTON.y_pos = self.SCREEN_HEIGHT * 0.85
             self.PLAY_GAME_BUTTON.check_hover(MENU_MOUSE_POS)
-            self.PLAY_GAME_BUTTON.update(self.SCREEN)
+            self.PLAY_GAME_BUTTON.update(
+                self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT
+            )
 
         if self.process_received_messages() == "launch_ui2":
             self.playGamePlayer = True
 
-        self.LOBBY_BACK_BUTTON.x_pos = self.SCREEN_WIDTH // 2 + 150
+        self.LOBBY_BACK_BUTTON.x_pos = self.SCREEN_WIDTH // 2 + int(
+            self.SCREEN_WIDTH * 0.1171875
+        )
         self.LOBBY_BACK_BUTTON.y_pos = self.SCREEN_HEIGHT * 0.85
         self.LOBBY_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
-        self.LOBBY_BACK_BUTTON.update(self.SCREEN)
+        self.LOBBY_BACK_BUTTON.update(
+            self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT
+        )
 
-        self.SCREEN.blit(self.messages_text, (input_req_x + 120, box_y + 210))
-        self.SCREEN.blit(self.message_text, (input_req_x + 120, box_y + 350))
+        self.SCREEN.blit(
+            self.messages_text,
+            (input_req_x + int(box_width * 0.15), box_y + int(box_height * 0.38182)),
+        )
+        self.SCREEN.blit(
+            self.message_text,
+            (input_req_x + int(box_width * 0.15), box_y + int(box_height * 0.63636)),
+        )
 
         return MENU_MOUSE_POS
 
@@ -729,7 +1014,7 @@ class UIManager:
             else:
                 raw = str(text_lines)
             self.lines = raw.splitlines()
-            self.padding = 16
+            self.padding = int(16 * min(w / 760, h / 400))
             self.line_height = self.font.size("Tg")[1] + 6
             self.offset = 0
             self.extra_bottom_space = extra_bottom_space
@@ -858,27 +1143,50 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
 6. Fin de la Ronda: Una ronda termina cuando un jugador se queda sin cartas al bajar todas sus combinaciones requeridas (y descartar si es necesario). El jugador que se quedó sin cartas será el primero en actuar en la siguiente ronda.
 7. Puntuación de la Ronda: Los jugadores que no lograron bajarse suman los puntos de las cartas que aún tienen en su mano.
 8. Fin de la Partida: El juego continúa a lo largo de las cuatro rondas. El ganador es el jugador con la menor puntuación total al final de las cuatro rondas, o el último jugador que no haya alcanzado o superado los 500 puntos."""
-        box_w, box_h = 760, 400
-        box_x = self.SCREEN_WIDTH // 2 - box_w // 2
-        box_y = 140
+
+        MIN_WIDTH = 800
+        MIN_HEIGHT = 600
+
+        if self.SCREEN_WIDTH < 1000 or self.SCREEN_HEIGHT < 700:
+            box_w_rel = 0.9
+            box_h_rel = 0.8
+            font_size = 16
+        else:
+            box_w_rel = 0.75
+            box_h_rel = 0.7
+            font_size = 18
+
+        box_w = int(self.SCREEN_WIDTH * box_w_rel)
+        box_h = int(self.SCREEN_HEIGHT * box_h_rel)
+
+        box_w = min(box_w, self.SCREEN_WIDTH - 40)
+        box_h = min(box_h, self.SCREEN_HEIGHT - 100)
+
+        box_x = max(20, (self.SCREEN_WIDTH - box_w) // 2)
+        box_y = max(50, (self.SCREEN_HEIGHT - box_h) // 2)
+
         rules_box = self.RulesTextBox(
-            box_x + 20,
-            box_y + 20,
-            box_w - 40,
-            box_h - 40,
-            self.get_font(18),
+            box_x + 10,
+            box_y + 10,
+            box_w - 20,
+            box_h - 20,
+            self.get_font(font_size),
             game_rules,
+            extra_bottom_space=30,
         )
 
         options_back = Button(
             image=None,
-            pos=(self.SCREEN_WIDTH // 2, box_y + box_h + 40),
+            pos=(
+                self.SCREEN_WIDTH // 2,
+                min(box_y + box_h + 60, self.SCREEN_HEIGHT - 50),
+            ),
             text_input="VOLVER",
-            font=self.get_font(35),
+            font=self.get_font(40 if self.SCREEN_HEIGHT > 600 else 35),  # Aumentado
             text_color="#FFFFFF",
             bg_color="#e35d59",
             hovering_color="#F9AA33",
-            size=(220, 65),
+            size=(0.171875, 0.090278),
         )
 
         while True:
@@ -891,31 +1199,88 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                     pygame.quit()
                     sys.exit()
                 elif event.type == pygame.VIDEORESIZE:
-                    self.SCREEN_WIDTH, self.SCREEN_HEIGHT = event.size
-                    self.SCREEN = pygame.display.set_mode(
-                        (self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.RESIZABLE
+                    MIN_WIDTH = 800
+                    MIN_HEIGHT = 600
+
+                    new_width = max(event.w, MIN_WIDTH)
+                    new_height = max(event.h, MIN_HEIGHT)
+
+                    if new_width != event.w or new_height != event.h:
+                        self.SCREEN_WIDTH, self.SCREEN_HEIGHT = new_width, new_height
+                        self.SCREEN = pygame.display.set_mode(
+                            (self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.RESIZABLE
+                        )
+                    else:
+                        self.SCREEN_WIDTH, self.SCREEN_HEIGHT = event.size
+                        self.SCREEN = pygame.display.set_mode(
+                            (self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.RESIZABLE
+                        )
+
+                    if self.SCREEN_WIDTH < 1000 or self.SCREEN_HEIGHT < 700:
+                        box_w_rel = 0.9
+                        box_h_rel = 0.8
+                        font_size = 16
+                    else:
+                        box_w_rel = 0.75
+                        box_h_rel = 0.7
+                        font_size = 18
+
+                    box_w = int(self.SCREEN_WIDTH * box_w_rel)
+                    box_h = int(self.SCREEN_HEIGHT * box_h_rel)
+
+                    box_w = min(box_w, self.SCREEN_WIDTH - 40)
+                    box_h = min(box_h, self.SCREEN_HEIGHT - 100)
+
+                    box_x = max(20, (self.SCREEN_WIDTH - box_w) // 2)
+                    box_y = max(50, (self.SCREEN_HEIGHT - box_h) // 2)
+
+                    rules_box = self.RulesTextBox(
+                        box_x + 10,
+                        box_y + 10,
+                        box_w - 20,
+                        box_h - 20,
+                        self.get_font(font_size),
+                        game_rules,
+                        extra_bottom_space=30,
                     )
-                    box_w, box_h = int(self.SCREEN_WIDTH * 0.7), int(
-                        self.SCREEN_HEIGHT * 0.6
-                    )
-                    box_x = self.SCREEN_WIDTH // 2 - box_w // 2
-                    box_y = self.SCREEN_HEIGHT // 2 - box_h // 2
-                    rules_box.rect.topleft = (box_x + 20, box_y + 20)
-                    rules_box._wrap_lines()
+
                     options_back.x_pos = self.SCREEN_WIDTH // 2
-                    options_back.y_pos = box_y + box_h + 40
+                    options_back.y_pos = min(
+                        box_y + box_h + 60, self.SCREEN_HEIGHT - 50
+                    )
+                    options_back.font = self.get_font(
+                        40 if self.SCREEN_HEIGHT > 600 else 35  # Aumentado
+                    )
 
             self.draw_background()
-            self.SCREEN.fill(
-                (50, 50, 50), (self.SCREEN_WIDTH // 2 - box_w // 2, box_y, box_w, box_h)
+
+            pygame.draw.rect(
+                self.SCREEN,
+                (50, 50, 50),
+                (box_x, box_y, box_w, box_h),
+                border_radius=10,
+            )
+            pygame.draw.rect(
+                self.SCREEN,
+                (70, 70, 70),
+                (box_x, box_y, box_w, box_h),
+                2,
+                border_radius=10,
             )
 
-            options_text = self.get_font(45).render(
+            title_font_size = 45 if self.SCREEN_HEIGHT > 700 else 35
+            options_text = self.get_font(title_font_size).render(
                 "Reglas de Rummy 500", True, "White"
             )
-            options_rect = options_text.get_rect(center=(self.SCREEN_WIDTH // 2, 100))
-            bg_rect = options_rect.inflate(40, 18)
+            options_rect = options_text.get_rect(
+                center=(self.SCREEN_WIDTH // 2, int(self.SCREEN_HEIGHT * 0.08))
+            )
+
+            bg_rect = options_rect.inflate(
+                int(self.SCREEN_WIDTH * 0.04), int(self.SCREEN_HEIGHT * 0.02)
+            )
             pygame.draw.rect(self.SCREEN, (80, 80, 80), bg_rect, border_radius=6)
+            pygame.draw.rect(self.SCREEN, (100, 100, 100), bg_rect, 2, border_radius=6)
             self.SCREEN.blit(options_text, options_rect)
 
             rules_box.update(events)
@@ -923,7 +1288,7 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
 
             mouse_pos = pygame.mouse.get_pos()
             options_back.check_hover(mouse_pos)
-            options_back.update(self.SCREEN)
+            options_back.update(self.SCREEN, self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
 
             for event in events:
                 if event.type == pygame.MOUSEBUTTONDOWN:
@@ -946,10 +1311,24 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
             if event.type == pygame.QUIT:
                 return False
             elif event.type == pygame.VIDEORESIZE:
-                self.SCREEN_WIDTH, self.SCREEN_HEIGHT = event.size
-                self.SCREEN = pygame.display.set_mode(
-                    (self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.RESIZABLE
-                )
+                MIN_WIDTH = 800
+                MIN_HEIGHT = 600
+
+                new_width = max(event.w, MIN_WIDTH)
+                new_height = max(event.h, MIN_HEIGHT)
+
+                if new_width != event.w or new_height != event.h:
+                    self.SCREEN_WIDTH, self.SCREEN_HEIGHT = new_width, new_height
+                    self.SCREEN = pygame.display.set_mode(
+                        (self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.RESIZABLE
+                    )
+                else:
+                    self.SCREEN_WIDTH, self.SCREEN_HEIGHT = event.size
+                    self.SCREEN = pygame.display.set_mode(
+                        (self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.RESIZABLE
+                    )
+
+                self.load_assets()
                 self.init_components()
 
             if event.type == pygame.MOUSEBUTTONDOWN:
@@ -1106,15 +1485,15 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                         print(f" Mensajes: {self.messages}")
 
             if self.current_screen == "create":
-                self.host_input_box.handle_event(event)
-                self.name_input_box.handle_event(event)
-                self.password_input_box.handle_event(event)
-                self.max_players_input_box.handle_event(event)
+                self.host_input_box.handle_event(event, self.SCREEN_WIDTH)
+                self.name_input_box.handle_event(event, self.SCREEN_WIDTH)
+                self.password_input_box.handle_event(event, self.SCREEN_WIDTH)
+                self.max_players_input_box.handle_event(event, self.SCREEN_WIDTH)
             elif self.current_screen == "join":
-                self.join_player_input_box.handle_event(event)
-                self.join_password_input_box.handle_event(event)
+                self.join_player_input_box.handle_event(event, self.SCREEN_WIDTH)
+                self.join_password_input_box.handle_event(event, self.SCREEN_WIDTH)
             elif self.current_screen == "lobby":
-                self.message_input_box.handle_event(event)
+                self.message_input_box.handle_event(event, self.SCREEN_WIDTH)
 
         self.process_received_messages()
         return True
@@ -1167,15 +1546,15 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
         self.SCREEN.blit(self.titulo_img, title_rect)
 
         if self.current_screen == "create":
-            self.host_input_box.update()
-            self.name_input_box.update()
-            self.password_input_box.update()
-            self.max_players_input_box.update()
+            self.host_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+            self.name_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+            self.password_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+            self.max_players_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
         elif self.current_screen == "join":
-            self.join_player_input_box.update()
-            self.join_password_input_box.update()
+            self.join_player_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
+            self.join_password_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
         elif self.current_screen == "lobby":
-            self.message_input_box.update()
+            self.message_input_box.update(self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
 
         if self.current_screen == "main":
             mouse_pos = self.draw_main_menu()
